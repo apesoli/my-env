@@ -1,0 +1,359 @@
+#
+# 06/06/2013
+# Based on nextie's .bashrc
+#
+# rev
+#
+
+[ -z "$PS1" ] && return
+echo -n "Bootstrapping your session environment"
+
+# Make up my PATH variable.
+
+# Home overrides, always.
+PATH=$HOME/bin:$HOME/local/bin:$HOME/local/sbin:$HOME/bin:/usr/local/sbin:/usr/local/git/bin:$PATH
+
+# alias for ssh display
+export DISPLAY=`echo $SSH_CLIENT | /usr/bin/awk '{ print $1":0" }'`
+
+#
+# Search an executable.
+#
+search_exec() # names additional-paths (both may be multiple values if separated by `:' colons)
+{
+  unset result
+  if [ $# -lt 1 ]; then return ; fi
+  names=$1
+  paths=$PATH:$2
+  savedIFS=$IFS ; IFS=':'
+  for path in $paths; do
+    if [ -d "$path" ]; then
+      for name in $names; do
+        if [ -x "$path/$name" ]; then
+          result="$path/$name"
+          unset name
+          unset path
+          IFS=$savedIFS ; unset savedIFS
+          unset savedIFS
+          unset names
+          unset paths
+          return 1
+        fi
+      done
+    fi
+  done
+  unset name
+  unset path
+  IFS=$savedIFS ; unset savedIFS
+  unset names
+  unset paths
+  unset result
+  return 0
+}
+
+#
+# Search more executables.
+#
+search_more() # names additional-paths (both may be multiple values if separated by `:' colons)
+{
+  unset result
+  if [ $# -lt 1 ]; then return ; fi
+  result=
+  names=$1
+  paths=$PATH:$2
+  savedIFS=$IFS ; IFS=':'
+  for name in $names; do
+    for path in $paths; do
+      if [ -d "$path" ] && [ -x "$path/$name" ]; then
+        if [ -z "$result" ]; then
+          result="$path/$name"
+        else
+          result="$result:$path/$name"
+        fi
+        echo -n "."
+      fi
+    done
+  done
+  unset name
+  unset path
+  IFS=$savedIFS ; unset savedIFS
+  unset names
+  unset paths
+  return 0
+}
+
+# Export
+export PATH
+
+#############################################################################
+
+echo -n "+"
+
+#
+# Get system name.
+#
+system_name=`uname -s 2>/dev/null`
+
+case $system_name in
+CYGWIN*|Windows*|Interix|React*)
+  win32=yo
+  ;;
+*)
+  win32=
+  ;;
+esac
+
+#
+# Despite having different syntaxes, at least it's just one command.
+#
+alias mdattach= ; unalias mdattach
+alias mddetach= ; unalias mddetach
+case $system_name in
+  Linux)
+    alias mdattach='losetup -f'
+    alias mddetach='losetup -d'
+    ;;
+  FreeBSD|DragonFlyBSD) 
+    alias mdattach='mdconfig -a -t vnode -f'
+    alias mddetach='mdconfig -d -u'
+    ;;
+  Darwin)
+    alias mdattach='hdiutil attach'
+    alias mddetach='hdiutil detach'
+    ;;
+esac
+
+#
+# Locate and use vim instead of vi
+#
+alias vi= ; unalias vi
+search_exec vim
+if [ ! -z "$result" ]; then
+  alias vi=$result
+  #
+  # Set it also as my preferred editor, please.
+  #
+  EDITOR=$result
+  export EDITOR
+fi
+
+#
+# Locate and use less instead of more
+#
+alias more= ; unalias more
+search_exec less
+if [ ! -z "$result" ]; then
+  alias more=$result
+  #
+  # Set it also as my preferred pager, please.
+  #
+  PAGER=$result
+  export PAGER
+fi
+
+echo -n "."
+
+#
+# We should run technicolor?
+# 
+if [ "x$TERM" != "xdumb" ]; then
+  technicolor=yo
+  is_xterm=`echo $TERM | grep '^xterm'`
+  #
+  # When using xterm-alike software, prefer UTF-8.
+  #
+  if [ ! -z "$is_xterm" ]; then
+    LANG=en_US.UTF-8
+    export LANG
+  fi
+  unset is_xterm
+else
+  technicolor=
+fi
+
+#
+# Make prompt [u@h w] $ (very colored)
+#
+if [ ! -z $technicolor ]; then
+  if [ ! -z "$SSH_CONNECTION" ]; then
+    # We are connecting through ssh
+    color=35
+  else
+    color=31
+  fi
+  PS1="[\\u@\[[1;"$color"m\]\\h\[m\] \[[1;33m\]\\w\[[m\]] \[[1;34m\]\\$\[[m\] "
+  unset color
+else
+  PS1="[\\u@\\h \\w] (L) \\$ "
+#PS1="[\\u@\\h \\w] (R) \\$ "
+fi
+PS2=">"
+export PS1 PS2
+
+alias ls= ; unalias ls
+if [ ! -z $technicolor ]; then
+  #
+  # Use colored ls where possible
+  #
+  case $system_name in
+    Linux)
+      #
+      # On Linux, for sure we're using GNU coreutils.
+      #
+      eval `dircolors`
+      alias ls='ls --color=auto -F'
+      ;;
+    FreeBSD|NetBSD|OpenBSD|DragonFlyBSD|Darwin)
+      #
+      # This is a dupe!
+      # 
+      #search_exec gnuls:gls
+      search_exec ls
+      ls_path=$result
+      if [ ! -z "$ls_path" ]; then
+        search_exec gnudircolors:gdircolors
+        dircolors_path=$result
+        if [ ! -z "$dircolors_path" ]; then
+          eval `$dircolors_path`
+          alias ls="$ls_path -FG"
+          LSCOLORS=CxGxHxDxBxEGEDEBEGECED
+          export LSCOLORS
+        else
+          ls_path=
+        fi
+      fi
+      if [ -z "$ls_path" ]; then
+        #
+        # On BSD we can still rely on colors!
+        #
+        #LSCOLORS=CxGxHxDxBxEGEDEBEGECED
+        #export LSCOLORS
+        alias ls="ls -FG"
+      fi
+      ;;
+    *)
+      #
+      # On other operating systems, search for coreutils package.
+      # 
+      search_exec gnuls:gls
+      ls_path=$result
+      if [ ! -z "$ls_path" ]; then
+        search_exec gnudircolors:gdircolors
+        dircolors_path=$result
+        if [ ! -z "$dircolors_path" ]; then
+          eval `$dircolors_path`
+          alias ls="$ls_path --color=auto -F"
+        fi
+      fi
+      if [ -z "$ls_path" ]; then
+        alias ls="ls -F"
+      fi
+      ;;
+  esac
+  unset dircolors_path
+  unset ls_path
+  echo -n "."
+fi
+
+#
+# Locate gnumake, if possible.
+#
+alias gmake= ; unalias gmake
+search_exec gmake:gnumake:make
+if [ ! -z "$result" ]; then
+  is_gmake=`$result --version | grep '^GNU Make'`
+  if [ ! -z "$is_gmake" ]; then
+    alias gmake=$result
+    echo -n "."
+  fi
+  unset is_gmake
+fi
+
+echo -n "."
+
+#
+# Setup some alias.
+#
+
+alias h='fc -l'
+alias j=jobs
+alias m=$PAGER
+alias ll='ls -laFo'
+alias l='ls -l'
+alias g='egrep -i'
+alias xterm='xterm -j -rightbar -sb -sl 1000 -bg black -fg white -bd blue'
+ 
+# be paranoid
+# alias cp='cp -ip'
+# alias mv='mv -i'
+# alias rm='rm -i'
+
+# alias wine= ;
+if [ ! -z $win32 ]; then
+  alias wine=
+else
+  #
+  # Search WINE if not on Windows.
+  # 
+
+  # Include local paths for Darwin!
+  search_exec wine /Applications/Darwine/Wine.bundle/Contents/bin:$HOME/Applications/Darwine/Wine.bundle/Contents/bin
+  if [ ! -z "$result" ]; then
+    alias wine=$result
+  else
+    # Always false
+    alias wine=false
+  fi
+fi
+
+#######################################################
+
+echo -n "."
+echo "done."
+
+#################################################################################
+
+#
+# Print out a fortune, if fortune teller is available
+#
+search_exec fortune
+if [ ! -z "$result" ]; then
+  if [ ! -z $technicolor ]; then
+    echo "[1;33m>>> Here's your fortune![m"
+  else
+    echo ">>> Here's your fortune!"
+  fi
+  # Launch it twice, my fortune randomness is b0rken.
+  ($result 2>/dev/null || $result)
+fi
+
+#### local stuff  ####
+
+export GREP_COLOR="1;41"
+alias grep='grep --color'
+alias egrep='egrep --color'
+#################################################################################
+
+unset result      # Used in searches.
+unset system_name # Used in system identification.
+unset win32       # Used in system identification.
+unset technicolor # Used in terminal identification.
+
+#################################################################################
+
+unset search_exec
+unset search_more
+
+echo -e "\nKernel Information: " `uname -smr`
+echo -e "${COLOR_BROWN}`bash --version`"
+
+#################################################################################
+# alias for the cmdline love
+alias textedit="open -a /Applications/TextEdit.app/"
+alias hexfiend="open -a /Applications/HexFiend.app/"
+alias 0xed="open -a /Applications/0xED.app/"
+
+#################################################################################
+# history stuff
+export HISTSIZE=10000
+shopt -s histappend
